@@ -114,11 +114,34 @@ class Adapter extends \Opus\Search\Adapter implements Indexing, Searching, Extra
      */
     protected function mapResultFieldToAsset($fieldName)
     {
+        $assetName = null;
+
         if ($this->options->fieldToAsset instanceof \Zend_Config) {
-            return $this->options->fieldToAsset->get($fieldName, $fieldName);
+            $assetName = $this->options->fieldToAsset->get($fieldName);
+            if (! is_null($assetName)) {
+                return $assetName;
+            }
         }
 
-        return $fieldName;
+        // TODO hack to map published_year_inverted (all year index fields) to year asset (should be cleaned up)
+        $config = \Opus_Config::get();
+
+        if (isset($config->search->facet)) {
+            $facets = $config->search->facet;
+            foreach ($facets as $facetName => $facetConfig) {
+                $indexField = $facetConfig->get('indexField');
+                if ($indexField === $fieldName) {
+                    $assetName = $facetName;
+                    break;
+                }
+            }
+        }
+
+        if (is_null($assetName)) {
+            return $fieldName;
+        } else {
+            return $assetName;
+        }
     }
 
     /*

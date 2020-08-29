@@ -43,6 +43,9 @@ namespace Opus\Search;
  *
  * TODO resolve deprecated configuration vs new configuration (cleanup)
  * TODO new configuration very complicated for most usage scenarios
+ * TODO refactor for facet focus configuration
+ * TODO get rid of service domains (just one search configuration) while still supporting usage of multiple
+ *      searchengines for redundancy etc.
  *
  * @see https://github.com/soletan/opus4-framework/wiki/Runtime-Configuration
  *
@@ -327,7 +330,7 @@ class Config
      * @return string[] probably empty set of found field names to use in faceted search
      * @throws \Zend_Config_Exception
      */
-    public static function getFacetFields($facetSetName = null, $serviceDomain = null)
+    public static function getFacetNames($facetSetName = null, $serviceDomain = null)
     {
         $facetSetName = is_null($facetSetName) ? 'default' : trim($facetSetName);
         if (! $facetSetName) {
@@ -356,6 +359,7 @@ class Config
             $set = [];
         }
 
+        // TODO refactor to have generic handling of required facets
         if (! in_array('server_state', $set)) {
             $set[] = 'server_state';
         }
@@ -373,6 +377,41 @@ class Config
         return $set;
     }
 
+    public static function getFacetFields($facetSetName = null, $serviceDomain = null)
+    {
+        $names = self::getFacetNames($facetSetName, $serviceDomain);
+
+        $config = \Opus_Config::get();
+
+        // Map facet names to configured index fields
+        $fields = array_map(function ($name) use ($config) {
+            if (isset($config->search->facet->$name->indexField)) {
+                return $config->search->facet->$name->indexField;
+            } else {
+                return $name;
+            }
+        }, $names);
+
+        return $fields;
+    }
+
+    protected static function mapFacetFields($facets)
+    {
+        $config = \Opus_Config::get();
+
+        $fields = [];
+
+        foreach ($facets as $name => $value) {
+            if (isset($config->search->facet->$name->indexField)) {
+                $fields[$config->search->facet->$name->indexField] = $value;
+            } else {
+                $fields[$name] = $value;
+            }
+        }
+
+        return $fields;
+    }
+
     /**
      * Delivers map of configured facet fields into related limit of matches to
      * obey on faceted search.
@@ -388,19 +427,25 @@ class Config
             throw new \InvalidArgumentException('invalid facet set name');
         }
 
-
+        // TODO consolidate configuraton
         $config = static::getDomainConfiguration($serviceDomain);
+        $searchConfig = \Opus_Config::get()->search; // new search configuration
+        if ($searchConfig && isset($searchConfig->facet->default)) {
+            $defaultOptions = $searchConfig->facet->default;
+        } else {
+            $defaultOptions = new \Zend_Config([]);
+        }
 
         // get configured limits from configuration
         $fieldLimits = $config->get('facetlimit', (object) []);
         $globalLimit = (int) $config->get('globalfacetlimit', 10);
+        $globalLimit = (int) $defaultOptions->get('limit', $globalLimit);
 
         $set = [
             '__global__' => $globalLimit
         ];
 
-
-        $fields = static::getFacetFields($facetSetName, $serviceDomain);
+        $fields = static::getFacetNames($facetSetName, $serviceDomain);
 
         foreach ($fields as $field) {
             if (isset($fieldLimits->$field)) {
@@ -410,14 +455,20 @@ class Config
             }
         }
 
-
-        // if facet-name is 'year_inverted', the facet values have to be sorted vice versa
-        // however, the facet-name should be 'year' (reset in framework ResponseRenderer::getFacets())
-        if (array_key_exists('year_inverted', $set)) {
-            $set['year'] = $set['year_inverted'];
-            $set['year_inverted']; // leave set for query to solr 'year_inverted' facet
+        // TODO hack to support new configuration
+        if ($searchConfig) {
+            $facetConfig = $searchConfig->get('facet');
+            if ($facetConfig) {
+                foreach ($facetConfig as $name => $options) {
+                    $limit = $options->get('limit');
+                    if (! is_null($limit)) {
+                        $set[$name] = $limit;
+                    }
+                }
+            }
         }
 
+        $set = self::mapFacetFields($set);
 
         return $set;
     }
@@ -443,9 +494,17 @@ class Config
             throw new \InvalidArgumentException('invalid facet set name');
         }
 
-
-        $fields = static::getFacetFields($facetSetName, $serviceDomain);
+        $fields = static::getFacetNames($facetSetName, $serviceDomain);
         $config = static::getDomainConfiguration($serviceDomain)->get('sortcrit', null);
+        $searchConfig = \Opus_Config::get()->search; // TODO new configuration (consolidate with old above)
+
+        if ($searchConfig && isset($searchConfig->facet->default->sort)
+                && $searchConfig->facet->default->sort == 'lexi') {
+            $defaultSort = 'lexi';
+        } else {
+            $defaultSort = null;
+        }
+
 
         if ($config instanceof \Zend_Config) {
             // BEST: try configuration in searchengine.solr.sortcrit.$facetSetName
@@ -471,9 +530,28 @@ class Config
             foreach ($fields as $field) {
                 if ($config->get($field) == 'lexi') {
                     $set[$field] = 'index';
+                } elseif ($config->get($field) !== 'count' && $defaultSort == 'lexi') {
+                    $set[$field] = 'index';
                 }
             }
         }
+
+        // TODO hack to support new configuration
+        if ($searchConfig) {
+            $facetConfig = $searchConfig->get('facet');
+            if ($facetConfig) {
+                foreach ($facetConfig as $name => $options) {
+                    $sortCrit = $options->get('sort');
+                    if ($sortCrit == 'lexi') {
+                        $set[$name] = 'index';
+                    } elseif ($sortCrit == 'count') {
+                        unset($set[$name]);
+                    }
+                }
+            }
+        }
+
+        $set = self::mapFacetFields($set);
 
         return $set;
     }

@@ -110,9 +110,22 @@ class Set
     public function overrideLimits($limits)
     {
         if (is_array($limits)) {
+            $config = \Opus_Config::get();
+
+            $mappedLimits = [];
+
+            // TODO cleanup, centralize mapping, so it does not have to happen in various places
+            foreach ($limits as $name => $value) {
+                if (isset($config->search->facet->$name->indexField)) {
+                    $mappedLimits[$config->search->facet->$name->indexField] = $value;
+                } else {
+                    $mappedLimits[$name] = $value;
+                }
+            };
+
             // replace field-specific limits but keep previously cached global
             // limit unless provided set is overriding that as well.
-            $this->config[self::LIMIT_KEY] = array_replace($this->config[self::LIMIT_KEY], $limits);
+            $this->config[self::LIMIT_KEY] = array_replace($this->config[self::LIMIT_KEY], $mappedLimits);
         } elseif (preg_match('/^[+-]?\d+$/', $limits)) {
             // got single integer ... reset limits to use given one globally, only
             $this->config[self::LIMIT_KEY] = [ self::GLOBABL_KEY => intval($limits) ];
@@ -194,7 +207,7 @@ class Set
 
             $fieldNames = preg_split('/[\s,]+/', $field, null, PREG_SPLIT_NO_EMPTY);
             foreach ($fieldNames as $name) {
-                if (! preg_match('/^[a-z_][a-z0-9_]*$/i', $name)) {
+                if (! preg_match('/^[a-z_][a-z0-9_\.]*$/i', $name)) {
                     throw new \InvalidArgumentException('malformed field selector: ' . $name);
                 }
 
@@ -222,8 +235,16 @@ class Set
             $this->fields = [];
         }
 
+        $config = \Opus_Config::get();
+
         foreach ($this->normalizeFields($fieldNames) as $name) {
-            $this->addField($name);
+            $indexField = $name;
+
+            if (isset($config->search->facet->$name->indexField)) {
+                $indexField = $config->search->facet->$name->indexField;
+            }
+
+            $this->addField($indexField);
         }
 
         return $this;
@@ -248,33 +269,14 @@ class Set
 
         $limits = [];
 
-        if (isset($input['facetNumber_author_facet'])) {
-            $limits['author_facet'] = $limit;
-        }
+        $prefix = 'facetNumber_';
+        $prefixLength = strlen($prefix);
 
-        if (isset($input['facetNumber_year'])) {
-            if (in_array('year_inverted', Config::getFacetFields())) {
-                // 'year_inverted' is used in framework and result is returned as 'year'
-                $limits['year_inverted'] = $limit;
+        foreach ($input as $key => $value) {
+            if (substr($key, 0, $prefixLength) === $prefix) {
+                $facet = substr($key, $prefixLength);
+                $limits[$facet] = $limit;
             }
-
-            $limits['year'] = $limit;
-        }
-
-        if (isset($input['facetNumber_doctype'])) {
-            $limits['doctype'] = $limit;
-        }
-
-        if (isset($input['facetNumber_language'])) {
-            $limits['language'] = $limit;
-        }
-
-        if (isset($input['facetNumber_subject'])) {
-            $limits['subject'] = $limit;
-        }
-
-        if (isset($input['facetNumber_institute'])) {
-            $limits['institute'] = $limit;
         }
 
         return count($limits) ? $limits : null;

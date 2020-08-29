@@ -38,7 +38,9 @@
 
 <xsl:stylesheet version="1.0"
     xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:php="http://php.net/xsl"
+    exclude-result-prefixes="php">
 
     <xsl:output method="xml" indent="yes" />
 
@@ -57,6 +59,31 @@
 
                 <!-- year -->
                 <xsl:variable name="year">
+                    <xsl:value-of select="php:functionString('Opus\Search\Solr\Document\Xslt::indexYear',
+                        /Opus/Opus_Document/PublishedDate/@Year,
+                        /Opus/Opus_Document/@PublishedYear,
+                        /Opus/Opus_Document/CompletedDate/@Year,
+                        /Opus/Opus_Document/@CompletedYear)" />
+                </xsl:variable>
+
+                <xsl:if test="$year != ''">
+                    <xsl:element name="field">
+                        <xsl:attribute name="name">year</xsl:attribute>
+                        <xsl:value-of select="$year"/>
+                    </xsl:element>
+                </xsl:if>
+
+                <!-- year_inverted -->
+                <xsl:if test="$year != ''">
+                    <xsl:variable name="yearInverted" select="65535 - $year"/>
+                    <xsl:element name="field">
+                        <xsl:attribute name="name">year_inverted</xsl:attribute>
+                        <xsl:value-of select="$yearInverted"/>:<xsl:value-of select="$year"/>
+                    </xsl:element>
+                </xsl:if>
+
+                <!-- published_year -->
+                <xsl:variable name="publishedYear">
                     <xsl:choose>
                         <xsl:when test="/Opus/Opus_Document/PublishedDate/@Year != ''">
                             <xsl:value-of select="/Opus/Opus_Document/PublishedDate/@Year" />
@@ -67,19 +94,47 @@
                     </xsl:choose>
                 </xsl:variable>
 
-                <xsl:if test="$year != ''">
+                <xsl:if test="$publishedYear != ''">
                     <xsl:element name="field">
-                        <xsl:attribute name="name">year</xsl:attribute>
-                        <xsl:value-of select="$year"/>
+                        <xsl:attribute name="name">published_year</xsl:attribute>
+                        <xsl:value-of select="$publishedYear"/>
                     </xsl:element>
                 </xsl:if>
 
-                <!-- year inverted -->
-                <xsl:if test="$year != ''">
-                    <xsl:variable name="yearInverted" select="65535 - $year"/>
+                <!-- published_year_inverted -->
+                <xsl:if test="$publishedYear != ''">
+                    <xsl:variable name="publishedYearInverted" select="65535 - $publishedYear"/>
                     <xsl:element name="field">
-                        <xsl:attribute name="name">year_inverted</xsl:attribute>
-                        <xsl:value-of select="$yearInverted"/>:<xsl:value-of select="$year"/>
+                        <xsl:attribute name="name">published_year_inverted</xsl:attribute>
+                        <xsl:value-of select="$publishedYearInverted"/>:<xsl:value-of select="$publishedYear"/>
+                    </xsl:element>
+                </xsl:if>
+
+                <!-- completed_year -->
+                <xsl:variable name="completedYear">
+                    <xsl:choose>
+                        <xsl:when test="/Opus/Opus_Document/CompletedDate/@Year != ''">
+                            <xsl:value-of select="/Opus/Opus_Document/CompletedDate/@Year" />
+                        </xsl:when>
+                        <xsl:otherwise>
+                            <xsl:value-of select="/Opus/Opus_Document/@CompletedYear" />
+                        </xsl:otherwise>
+                    </xsl:choose>
+                </xsl:variable>
+
+                <xsl:if test="$completedYear != ''">
+                    <xsl:element name="field">
+                        <xsl:attribute name="name">completed_year</xsl:attribute>
+                        <xsl:value-of select="$completedYear"/>
+                    </xsl:element>
+                </xsl:if>
+
+                <!-- completed_year_inverted -->
+                <xsl:if test="$completedYear != ''">
+                    <xsl:variable name="completedYearInverted" select="65535 - $completedYear"/>
+                    <xsl:element name="field">
+                        <xsl:attribute name="name">completed_year_inverted</xsl:attribute>
+                        <xsl:value-of select="$completedYearInverted"/>:<xsl:value-of select="$completedYear"/>
                     </xsl:element>
                 </xsl:if>
 
